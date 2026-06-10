@@ -14,6 +14,9 @@
                 <i class="fa-solid fa-sack-dollar text-warning"></i> Санхүүгийн самбар
             </a>
             <div class="d-flex align-items-center gap-3">
+
+                <button class="btn btn-sm btn-outline-primary fw-bold text-white border-primary-subtle" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasBudget">Төсөв тогтоох</button>
+                
                 <span class="text-light small" id="user-email">...</span>
                 <button class="btn btn-outline-light btn-sm" id="btn-logout">
                     <i class="bi bi-box-arrow-right"></i> Гарах
@@ -108,6 +111,61 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvasBudget" aria-labelledby="offcanvasBudgetLabel">    
+        <div class="offcanvas-header bg-dark text-white">
+            <h5 class="offcanvas-title fw-bold" id="offcanvasBudgetLabel">
+                <i class="fa-solid fa-bullseye me-2"></i>Сар бүрийн төсөв тогтоох
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+
+        <div class="offcanvas-body p-4">
+            <p class="text-secondary small mb-4">
+                Та тухайн сард тодорхой ангилалд зарцуулах мөнгөний дээд хязгаарыг тогтоосноор санхүүгээ хэтрэхээс хамгаалж чадна.
+            </p>
+
+            <form id="budget-form">
+                <div class="mb-3">
+                    <label class="form-label small fw-medium text-secondary">Ангилал сонгох</label>
+                    <select class="form-select shadow-sm" id="budget-category" required>
+                        <option value="Хүнс">Хоол хүнс</option>
+                        <option value="Тээвэр">Унаа, тээвэр</option>
+                        <option value="Орон байр">Байр, цахилгаан</option>
+                        <option value="Үзвэр үйлчилгээ">Чөлөөт цаг, худалдан авалт</option>
+                        <option value="Бусад">Бусад</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-medium text-secondary">Төсвийн хязгаар (₮)</label>
+                    <div class="input-group shadow-sm">
+                        <input type="number" class="form-control fs-5 fw-bold" id="budget-amount" placeholder="0" min="1" required>
+                        <span class="input-group-text fw-bold">₮</span>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label small fw-medium text-secondary">Аль сард зориулж</label>
+                    <input type="month" class="form-control shadow-sm" id="budget-month" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 shadow-sm py-2 fw-bold">
+                    <i class="fa-solid fa-floppy-disk me-1"></i> Төсөв батлах
+                </button>
+            </form>
+            
+            <hr class="my-4 text-secondary">
+
+            <div id="current-budgets-list">
+                <h6 class="fw-bold text-dark mb-3">Одоогийн тогтоосон төсвүүд:</h6>
+                <div class="text-center py-3 text-muted small bg-light rounded">
+                    Одоогоор төсөв тогтоогоогүй байна.
                 </div>
             </div>
         </div>
