@@ -9,20 +9,21 @@ const txDescInput = document.getElementById("tx-desc");
 
 document.addEventListener('DOMContentLoaded', async () => {
     
-    // Хамгийн түрүүнд хэрэглэгч нэвтэрсэн эсэхийг шалгана
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
-        // Хэрэв нэвтрээгүй байвал шууд нэвтрэх хуудас руу буцаана
         window.location.href = 'index.html';
         return;
     }
 
-    // Хэрэглэгч нэвтэрсэн нь үнэн бол имэйлийг нь navbar дээр харуулна
     document.getElementById('user-email').textContent = user.email;
 
     await fetchTransactions(); 
     await fetchBudgets();
+
+    // Хуучин гүйлгээтэй хэрэглэгчид тэмдэг шалгана (toast харуулахгүй)
+    await checkAndAwardBadges(user, false);
+    await fetchBadges();
     
 });
 
@@ -43,26 +44,22 @@ transactionForm.addEventListener('submit', async (e) => {
         return;
     }
 
-
-    // Хэрэв хийж буй гүйлгээ нь ЗАРЛАГА бол ТӨСӨВ ХЭТЭРСЭН ЭСЭХИЙГ ШАЛГАНА
     if (type === 'expense') {
-        // Тухайн гүйлгээний огнооноос Жил-Сарыг салгаж авна (Жишээ нь: "2026-06-08" -> "2026-06")
         const currentMonthYear = date.substring(0, 7);
 
-        // Supabase-ээс энэ сард, энэ ангилалд тогтоосон төсөв байгаа эсэхийг хайх
-        const { data: budgetData } = await supabase
+        const { data: budgetRows } = await supabase
             .from('budgets')
             .select('limit_amount')
             .eq('user_id', user.id)
             .eq('category', category)
             .eq('month_year', currentMonthYear)
-            .maybeSingle(); // Олдвол ганцхан объект авна, олдохгүй бол null
+            .limit(1);
 
-        // Хэрэв энэ сард энэ ангилалд зориулсан төсөв олдвол цааш шалгана
+        const budgetData = budgetRows && budgetRows.length > 0 ? budgetRows[0] : null;
+
         if (budgetData) {
             const limitAmount = budgetData.limit_amount;
 
-            // Энэ сард, энэ ангилалд урьд нь хийгдсэн бүх зарлагуудын нийлбэрийг Supabase-с татах
             const { data: pastExpenses } = await supabase
                 .from('transactions')
                 .select('amount')
@@ -70,27 +67,23 @@ transactionForm.addEventListener('submit', async (e) => {
                 .eq('type', 'expense')
                 .eq('category', category);
             
-            // Энэ сард хамаарах зарлагуудыг шүүж нийлбэрийг олно
             let totalPastExpense = 0;
             if (pastExpenses) {
                 pastExpenses.forEach(tx => {
-                    // Гүйлгээ бүрийн огноо нь энэ сард хамааралтай эсэхийг шалгах
                     if (tx.date && tx.date.substring(0, 7) === currentMonthYear) {
                         totalPastExpense += tx.amount;
                     }
                 });
             }
 
-            // Хуучин зарлагууд дэар ОДООНЫ ШИНЭ зарлагын дүнг нэмээд лимитээс давж байгааг шалгах
             if (totalPastExpense + amount > limitAmount) {
                 const currentTotal = totalPastExpense + amount;
-                // Хэрэглэгчээс зөвшөөрөл авна
                 const proceed = confirm(
                     `АНХААРУУЛГА!\n\nТаны ${currentMonthYear} сарын "${category}" ангиллын төсвийн хязгаар: ${limitAmount.toLocaleString()} ₮\nОдоогийн нийт зарцуулалт: ${currentTotal.toLocaleString()} ₮ болох гэж байна.\n\nТөсөв хэтрүүлж гүйлгээг үргэлжлүүлэх үү?`
                 );
                 
                 if (!proceed) {
-                    return; // Хэрэв хэрэглэгч "Цуцлах" дээр дарвал гүйлгээг хадгалахгүй зогсооно!
+                    return;
                 }
             }
         }
@@ -114,7 +107,11 @@ transactionForm.addEventListener('submit', async (e) => {
     } else {
         alert("Гүйлгээ амжилттай бүртгэгдлээ!");
         transactionForm.reset();
-        fetchTransactions();
+        await fetchTransactions();
+
+        // Гүйлгээ нэмсний дараа тэмдэг шалгана
+        await checkAndAwardBadges(user, true);
+        await fetchBadges();
     }
 });
 
@@ -135,19 +132,16 @@ async function fetchTransactions() {
     let totalIncome = 0;
     let totalExpense = 0;
 
-    // Ирсэн бүх гүйлгээнүүдийг нэг нэгээр нь шалгаж, орлого зарлагыг нэмнэ
     transactions.forEach(tx => {
         if (tx.type === 'income') {
-            totalIncome += tx.amount;  // Хэрэв орлого бол Нийт Орлого дээр нэмнэ
+            totalIncome += tx.amount;
         } else if (tx.type === 'expense') {
-            totalExpense += tx.amount; // Хэрэв зарлага бол Нийт зарлага дээр нэмнэ
+            totalExpense += tx.amount;
         }
     });
 
-    // Үлдэгдэл баланс = Нийт Орлого - Нийт Зарлага
     const totalBalance = totalIncome - totalExpense;
 
-    // Бодсон дүнг HTML карт руу бичих
     document.getElementById('total-balance').textContent = `${totalBalance.toLocaleString()} ₮`;
     document.getElementById('total-income').textContent = `${totalIncome.toLocaleString()} ₮`;
     document.getElementById('total-expense').textContent = `${totalExpense.toLocaleString()} ₮`;
@@ -201,30 +195,24 @@ function renderTransactions(transactions) {
 fetchTransactions();
 
 
-
-
 window.deleteTransaction = async function(id) {
-    // Хэрэглэгчээс үнэхээр устгах эсэхийг нь лавлаж асууна
     const confirmDelete = confirm("Та энэ гүйлгээг устгахдаа итгэлтэй байна уу?");
     
     if (!confirmDelete) {
-        return; // Хэрэв "Үгүй" гэвэл устгах үйлдлийг цуцалж, функцээс гарна
+        return;
     }
 
     try {
-        // Supabase өгөгдлийн сангаас тухайн ID-тай гүйлгээг устгах
         const { error } = await supabase
             .from('transactions')
-            .delete() // SQL-ийн DELETE команд
-            .eq('id', id); // Зөвхөн энэ ID-тай мөрийг устга гэдэг шүүлтүүр
+            .delete()
+            .eq('id', id);
 
         if (error) {
-            throw error; // Хэрэв алдаа гарвал catch хэсэг рүү шиднэ
+            throw error;
         }
 
         alert("Гүйлгээ амжилттай устгагдлаа.");
-
-        // Устгасны дараа дэлгэц дээрх хүснэгтийг шууд шинэчилж харуулна
         fetchTransactions();
 
     } catch (error) {
@@ -232,26 +220,23 @@ window.deleteTransaction = async function(id) {
         console.error("Устгах үеийн алдаа:", error);
     }
 }
+
 const btnLogout = document.getElementById('btn-logout');
 
-// Товч дээр дарах үед ажиллах Event Listener залгах
 btnLogout.addEventListener('click', async () => {
-    // Хэрэглэгчээс үнэхээр гарах эсэхийг нь лавлаж асууна
     const confirmLogout = confirm("Та системээс гарахдаа итгэлтэй байна уу?");
     
     if (!confirmLogout) {
-        return; // Хэрэв цуцалбал гарах үйлдлийг зогсооно
+        return;
     }
 
     try {
-        // Supabase-ийн системээс бүрмөсөн гаргах, сешн устгах тушаал
         const { error } = await supabase.auth.signOut();
 
         if (error) {
-            throw error; // Хэрэв алдаа гарвал catch хэсэг рүү шиднэ
+            throw error;
         }
 
-        // Амжилттай гарсан тул нэвтрэх хуудас руу шууд шилжүүлнэ
         window.location.href = 'index.html';
 
     } catch (error) {
@@ -270,18 +255,16 @@ const budgetMonthInput = document.getElementById('budget-month');
 budgetForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    // Формоос өгөгдөл уншиж авах
     const category = budgetCategoryInput.value;
     const limitAmount = parseFloat(budgetAmountInput.value);
     const monthYear = budgetMonthInput.value; 
-    // Нэвтэрсэн хэрэглэгчийг шалгах
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
         alert("Сешн дууссан байна!");
         return;
     }
 
-    // Supabase-ийн 'budgets' хүснэгт рүү хадгалах
     const { error } = await supabase
         .from('budgets')
         .insert([
@@ -299,16 +282,13 @@ budgetForm.addEventListener('submit', async (e) => {
         alert(`${monthYear} сарын ${category} ангилалд төсөв амжилттай тогтоогдлоо!`);
         budgetForm.reset();
         
-        // Bootstrap Offcanvas цэсийг автоматаар хаах код
         const instance = bootstrap.Offcanvas.getInstance(document.getElementById('offcanvasBudget'));
         if (instance) instance.hide();
         
-        // Доор бичих төсвийн жагсаалтыг шинэчлэх функцийг дуудна
         if (typeof fetchBudgets === 'function') fetchBudgets();
     }
 });
 
-// Хэрэглэгчийн тогтоосон төсвүүдийг уншиж, Offcanvas доор жагсаах функц
 async function fetchBudgets() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -352,4 +332,182 @@ async function fetchBudgets() {
     });
 
     budgetsContainer.innerHTML = htmlContent;
+}
+
+
+// ============================================================
+// ТЭМДЭГИЙН СИСТЕМ (BADGE SYSTEM)
+// ============================================================
+
+// Тэмдэг аль хэдийн авсан эсэхийг шалгах
+async function hasBadge(userId, badgeName) {
+    const { data } = await supabase
+        .from('badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_name', badgeName)
+        .limit(1);
+    return data && data.length > 0;
+}
+
+// Тэмдэг олгох
+async function awardBadge(userId, badgeName, showToast = true) {
+    const alreadyHas = await hasBadge(userId, badgeName);
+    if (alreadyHas) return false;
+
+    const { error } = await supabase
+        .from('badges')
+        .insert([{ user_id: userId, badge_name: badgeName }]);
+
+    if (!error) {
+        if (showToast) showBadgeToast(badgeName);
+        return true;
+    }
+    return false;
+}
+
+// Тэмдэг авсан үед popup мэдэгдэл харуулах
+function showBadgeToast(badgeName) {
+    const badgeInfo = {
+        'Анхны бүртгэл': { icon: '🎉', desc: 'Анхны гүйлгээгээ амжилттай бүртгэлээ!' },
+        'Мастер':        { icon: '🏆', desc: 'Сарын төсвөө хэтрүүлэлгүй барьж чадлаа!' },
+        'Хэмнэгч':       { icon: '💰', desc: 'Зарлага нийт орлогын 50%-аас бага байлаа!' },
+    };
+
+    const info = badgeInfo[badgeName] || { icon: '⭐', desc: '' };
+
+    // Toast элемент үүсгэх
+    const toastEl = document.createElement('div');
+    toastEl.className = 'badge-toast';
+    toastEl.innerHTML = `
+        <div class="badge-toast-icon">${info.icon}</div>
+        <div>
+            <div class="badge-toast-title">Шинэ тэмдэг авлаа!</div>
+            <div class="badge-toast-name">${badgeName}</div>
+            <div class="badge-toast-desc">${info.desc}</div>
+        </div>
+    `;
+
+    document.body.appendChild(toastEl);
+
+    // 0.1 секундын дараа харагдуулах (CSS transition-д зориулж)
+    setTimeout(() => toastEl.classList.add('show'), 100);
+
+    // 4 секундын дараа арилгах
+    setTimeout(() => {
+        toastEl.classList.remove('show');
+        setTimeout(() => toastEl.remove(), 500);
+    }, 4000);
+}
+
+// Бүх тэмдгийн нөхцөлийг шалгах үндсэн функц
+async function checkAndAwardBadges(user, showToast = true) {
+    const userId = user.id;
+
+    // 1. "Анхны бүртгэл" тэмдэг — нийт гүйлгээний тоог шалгах
+    const { count: txCount } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+    if (txCount >= 1) {
+        await awardBadge(userId, 'Анхны бүртгэл', showToast);
+    }
+
+    // Одоогийн сар
+    const now = new Date();
+    const currentMonthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // Энэ сарын гүйлгээнүүдийг татах
+    const { data: thisMonthTx } = await supabase
+        .from('transactions')
+        .select('type, amount, date, category')
+        .eq('user_id', userId);
+
+    const monthTx = (thisMonthTx || []).filter(tx => tx.date && tx.date.substring(0, 7) === currentMonthYear);
+
+    let monthIncome = 0;
+    let monthExpense = 0;
+    monthTx.forEach(tx => {
+        if (tx.type === 'income') monthIncome += parseFloat(tx.amount);
+        if (tx.type === 'expense') monthExpense += parseFloat(tx.amount);
+    });
+
+    // 2. "Хэмнэгч" тэмдэг — зарлага орлогын 50%-аас бага
+    if (monthIncome > 0 && monthExpense < monthIncome * 0.5) {
+        await awardBadge(userId, 'Хэмнэгч', showToast);
+    }
+
+    // 3. "Мастер" тэмдэг — энэ сарын бүх төсвийн ангилал хэтрээгүй эсэхийг шалгах
+    const { data: budgets } = await supabase
+        .from('budgets')
+        .select('category, limit_amount')
+        .eq('user_id', userId)
+        .eq('month_year', currentMonthYear);
+
+    if (budgets && budgets.length > 0) {
+        let allUnderBudget = true;
+
+        for (const budget of budgets) {
+            const spent = monthTx
+                .filter(tx => tx.type === 'expense' && tx.category === budget.category)
+                .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+
+            if (spent > budget.limit_amount) {
+                allUnderBudget = false;
+                break;
+            }
+        }
+
+        if (allUnderBudget) {
+            await awardBadge(userId, 'Мастер', showToast);
+        }
+    }
+}
+
+// Хэрэглэгчийн авсан тэмдгүүдийг татаж харуулах
+async function fetchBadges() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: badges, error } = await supabase
+        .from('badges')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('awarded_at', { ascending: false });
+
+    if (error) {
+        console.error("Тэмдэг уншихад алдаа:", error.message);
+        return;
+    }
+
+    renderBadges(badges || []);
+}
+
+const ALL_BADGES = [
+    { name: 'Анхны бүртгэл', icon: '🎉', desc: 'Анхны гүйлгээгээ бүртгэсэн' },
+    { name: 'Мастер',        icon: '🏆', desc: 'Сарын төсвөө хэтрүүлэлгүй барьсан' },
+    { name: 'Хэмнэгч',       icon: '💰', desc: 'Зарлага орлогын 50%-аас бага байсан' },
+];
+
+function renderBadges(earnedBadges) {
+    const container = document.getElementById('badges-container');
+    if (!container) return;
+
+    const earnedNames = earnedBadges.map(b => b.badge_name);
+
+    let html = '';
+    ALL_BADGES.forEach(badge => {
+        const earned = earnedNames.includes(badge.name);
+        html += `
+            <div class="badge-card ${earned ? 'earned' : 'locked'}" title="${badge.desc}">
+                <div class="badge-card-icon">${earned ? badge.icon : '🔒'}</div>
+                <div class="badge-card-name">${badge.name}</div>
+                <div class="badge-card-desc">${badge.desc}</div>
+                ${earned ? '<div class="badge-card-status text-success">✓ Авсан</div>' : '<div class="badge-card-status text-muted">Аваагүй</div>'}
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
 }
