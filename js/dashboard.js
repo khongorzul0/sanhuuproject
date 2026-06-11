@@ -32,7 +32,7 @@ transactionForm.addEventListener('submit', async (e) => {
 
     const type = txTypeInput.value;
     const category = txCategoryInput.value;
-    const amount = txAmountInput.value;
+    const amount = parseFloat(txAmountInput.value); 
     const date = txDateInput.value;
     const description = txDescInput.value;
 
@@ -44,6 +44,7 @@ transactionForm.addEventListener('submit', async (e) => {
         return;
     }
 
+    // 1. ЗӨВХӨН ЗАРЛАГЫН ҮЕД ТӨСӨВ ШАЛГАХ
     if (type === 'expense') {
         const currentMonthYear = date.substring(0, 7);
 
@@ -62,7 +63,7 @@ transactionForm.addEventListener('submit', async (e) => {
 
             const { data: pastExpenses } = await supabase
                 .from('transactions')
-                .select('amount')
+                .select('amount, date')
                 .eq('user_id', user.id)
                 .eq('type', 'expense')
                 .eq('category', category);
@@ -71,25 +72,29 @@ transactionForm.addEventListener('submit', async (e) => {
             if (pastExpenses) {
                 pastExpenses.forEach(tx => {
                     if (tx.date && tx.date.substring(0, 7) === currentMonthYear) {
-                        totalPastExpense += tx.amount;
+                        totalPastExpense += parseFloat(tx.amount);
                     }
                 });
             }
 
-            if (totalPastExpense + amount > limitAmount) {
-                const currentTotal = totalPastExpense + amount;
+            const currentTotal = totalPastExpense + amount;
+
+            // ХЭТЭРСЭН БОЛ АНХААРУУЛГА ГАРГАХ
+            if (currentTotal > limitAmount) {
                 const proceed = confirm(
                     `АНХААРУУЛГА!\n\nТаны ${currentMonthYear} сарын "${category}" ангиллын төсвийн хязгаар: ${limitAmount.toLocaleString()} ₮\nОдоогийн нийт зарцуулалт: ${currentTotal.toLocaleString()} ₮ болох гэж байна.\n\nТөсөв хэтрүүлж гүйлгээг үргэлжлүүлэх үү?`
                 );
                 
+                // Хэрэв үргэлжлүүлэхгүй бол функцээс энд зогсоно
                 if (!proceed) {
-                    return;
+                    return; 
                 }
             }
         }
     }
 
-    const { data, error } = await supabase
+    // 2. ДЭЭРХ АНХААРУУЛГА ДЭЭР "OK" ДАРСАН БОЛ ГҮЙЛГЭЭГ ХАДГАЛНА
+    const { error } = await supabase
         .from('transactions')
         .insert([{
             user_id: user.id,
@@ -98,18 +103,17 @@ transactionForm.addEventListener('submit', async (e) => {
             amount: amount,
             description: description,
             date: date
-        }])
-        .select();
+        }]);
 
     if (error) {
         alert("Гүйлгээг хадгалахад алдаа гарлаа: " + error.message);
-        console.error("Алдааны дэлгэрэнгүй:", error);
     } else {
+        // ЭНД ХАДГАЛСАН ДАРААХ МЭДЭГДЭЛ ГАРНА
         alert("Гүйлгээ амжилттай бүртгэгдлээ!");
         transactionForm.reset();
         await fetchTransactions();
 
-        // Гүйлгээ нэмсний дараа тэмдэг шалгана
+        // 3. ТЭМДЭГ ШАЛГАХ (Төсөв хэтэрсэн бол Мастер тэмдэг устгагдах логик энд ажиллана)
         await checkAndAwardBadges(user, true);
         await fetchBadges();
     }
