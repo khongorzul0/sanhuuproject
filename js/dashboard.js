@@ -443,30 +443,38 @@ async function checkAndAwardBadges(user, showToast = true) {
     }
 
     // 3. "Мастер" тэмдэг — энэ сарын бүх төсвийн ангилал хэтрээгүй эсэхийг шалгах
-    const { data: budgets } = await supabase
-        .from('budgets')
-        .select('category, limit_amount')
-        .eq('user_id', userId)
-        .eq('month_year', currentMonthYear);
+    // 3. "Мастер" тэмдэг — энэ сарын бүх төсвийн ангилал хэтрээгүй эсэхийг шалгах
+const { data: budgets } = await supabase
+    .from('budgets')
+    .select('category, limit_amount')
+    .eq('user_id', userId)
+    .eq('month_year', currentMonthYear);
 
-    if (budgets && budgets.length > 0) {
-        let allUnderBudget = true;
+if (budgets && budgets.length > 0) {
+    let allUnderBudget = true;
 
-        for (const budget of budgets) {
-            const spent = monthTx
-                .filter(tx => tx.type === 'expense' && tx.category === budget.category)
-                .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+    for (const budget of budgets) {
+        const spent = monthTx
+            .filter(tx => tx.type === 'expense' && tx.category === budget.category)
+            .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
 
-            if (spent > budget.limit_amount) {
-                allUnderBudget = false;
-                break;
-            }
-        }
-
-        if (allUnderBudget) {
-            await awardBadge(userId, 'Мастер', showToast);
+        if (spent > budget.limit_amount) {
+            allUnderBudget = false;
+            break;
         }
     }
+
+    if (allUnderBudget) {
+        await awardBadge(userId, 'Мастер', showToast);
+    } else {
+        await supabase
+            .from('badges')
+            .delete()
+            .eq('user_id', userId)
+            .eq('badge_name', 'Мастер');
+    }
+}
+
 }
 
 // Хэрэглэгчийн авсан тэмдгүүдийг татаж харуулах
